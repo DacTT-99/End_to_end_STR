@@ -1,17 +1,13 @@
-import matplotlib.pyplot as plt
 from PIL import Image
 
 from vietocr.tool.predictor import Predictor
 from vietocr.tool.config import Cfg
 
-import sys
-import os
 import time
 import argparse
 import cv2
 
 import torch
-import torch.nn as nn
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 
@@ -39,22 +35,6 @@ def copyStateDict(state_dict):
 
 def str2bool(v):
     return v.lower() in ("yes", "y", "true", "t", "1")
-
-parser = argparse.ArgumentParser(description='CRAFT Text Detection')
-parser.add_argument('--trained_model', default='weights/craft_mlt_25k.pth', type=str, help='pretrained model')  ###### <- edit to weight path
-parser.add_argument('--text_threshold', default=0.7, type=float, help='text confidence threshold')
-parser.add_argument('--low_text', default=0.4, type=float, help='text low-bound score')
-parser.add_argument('--link_threshold', default=0.4, type=float, help='link confidence threshold')
-parser.add_argument('--cuda', default=True, type=str2bool, help='Use cuda for inference')
-parser.add_argument('--canvas_size', default=1280, type=int, help='image size for inference')
-parser.add_argument('--mag_ratio', default=1.5, type=float, help='image magnification ratio')
-parser.add_argument('--poly', default=False, action='store_true', help='enable polygon type')
-parser.add_argument('--show_time', default=False, action='store_true', help='show processing time')
-parser.add_argument('--test_folder', default='/data/', type=str, help='folder path to input images')
-parser.add_argument('--refine', default=False, action='store_true', help='enable link refiner')
-parser.add_argument('--refiner_model', default='weights/craft_refiner_CTW1500.pth', type=str, help='pretrained refiner model')
-
-args = parser.parse_args()
 
 # detector, detect text 
 class detector():
@@ -108,46 +88,56 @@ class detector():
         render_img = np.hstack((render_img, score_link))
         ret_score_text = imgproc.cvt2HeatmapImg(render_img)
 
-        if args.show_time : print("\ninfer/postproc time : {:.3f}/{:.3f}".format(t0, t1))
+        if args.show_time : 
+            print("\ninfer/postproc time : {:.3f}/{:.3f}".format(t0, t1))
 
         return boxes, polys, ret_score_text
 
-
-# 
 class recognizor():
-	def __init__(self):
-		self.config = Cfg.load_config_from_name('vgg_transformer')
-		self.config['weights'] = '/home/list_99/Python/end_to_end_image_text_text_recognition/transformerocr .pth'
-		self.config['transformer']['num_decoder_layers'] = 3
-		self.config['transformer']['num_encoder_layers'] = 3
-		self.config['vocab'] = 'aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZ0123456789!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~ '
-		self.detector = Predictor(self.config)
-	def predict(self,img):
-		return self.detector.predict(img)
+    def __init__(self):
+        self.config = Cfg.load_config_from_name('vgg_transformer')
+        self.config['weights'] = './weights/transformerocr.pth'
+        self.config['transformer']['num_decoder_layers'] = 3
+        self.config['transformer']['num_encoder_layers'] = 3
+        self.config['vocab'] = 'aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZ0123456789!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~ '
+        self.detector = Predictor(self.config)
+    def predict(self,img):
+        return self.detector.predict(img)
 
 
 
-def main():
-    d = detector()
-    r = recognizor()
-    image = imgproc.loadImage('/home/list_99/Python/DS/ex2.png')
-    img = Image.open('/home/list_99/Python/DS/ex2.png')
-    _,polys,_= d.predict(image,args.text_threshold, args.link_threshold, args.low_text, args.cuda, args.poly)
+def main(args):
+    craft = detector()
+    tfm_ocr = recognizor()
+    image, img_origin = imgproc.loadImage('/home/list_99/Pictures/PDC.png')
+
+    boxs,polys,imgs= craft.predict(image,args.text_threshold, args.link_threshold, args.low_text, args.cuda, args.poly)
     for p in polys:
         a = np.array(p).reshape((-1)).astype(np.int32)
         max_x=max((a[0],a[2],a[4],a[6]))
         min_x=min((a[0],a[2],a[4],a[6]))
         max_y=max((a[1],a[3],a[5],a[7]))
         min_y=min((a[1],a[3],a[5],a[7]))
-        rec = [min_x,min_y,max_x,max_y]
-        print(rec)
-    #print(polys)
-        c = img.crop(rec)
-        res = r.predict(c)
-        print(res)
-    #c = img[36:52,216:292]
+        box = [min_x,min_y,max_x,max_y]
+        crop = img_origin.crop(box)
+        ocr_res = tfm_ocr.predict(crop)
+        print(box)
+        print(ocr_res)
     
-    #print(res)
-
 if __name__=='__main__':
-	main()
+    parser = argparse.ArgumentParser(description='end to end')
+    parser.add_argument('--trained_model', default='weights/craft_mlt_25k.pth', type=str, help='pretrained model')  ###### <- edit to weight path
+    parser.add_argument('--text_threshold', default=0.7, type=float, help='text confidence threshold')
+    parser.add_argument('--low_text', default=0.4, type=float, help='text low-bound score')
+    parser.add_argument('--link_threshold', default=0.4, type=float, help='link confidence threshold')
+    parser.add_argument('--cuda', default=True, type=str2bool, help='Use cuda for inference')
+    parser.add_argument('--canvas_size', default=1280, type=int, help='image size for inference')
+    parser.add_argument('--mag_ratio', default=1.5, type=float, help='image magnification ratio')
+    parser.add_argument('--poly', default=False, action='store_true', help='enable polygon type')
+    parser.add_argument('--show_time', default=False, action='store_true', help='show processing time')
+    parser.add_argument('--test_folder', default='/data/', type=str, help='folder path to input images')
+    parser.add_argument('--refine', default=False, action='store_true', help='enable link refiner')
+    parser.add_argument('--refiner_model', default='weights/craft_refiner_CTW1500.pth', type=str, help='pretrained refiner model')
+
+    args = parser.parse_args()
+    main(args)
